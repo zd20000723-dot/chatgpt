@@ -60,6 +60,7 @@
       display: flex;
       gap: 10px;
       align-items: center;
+      flex-wrap: wrap;
     }
 
     button {
@@ -91,6 +92,7 @@
       color: #cbd5e1;
       font-weight: 600;
       font-size: 0.95rem;
+      flex-wrap: wrap;
     }
 
     canvas {
@@ -125,6 +127,84 @@
 
     .food { color: var(--accent); }
     .danger { color: var(--danger); }
+
+    .form { margin-bottom: 14px; }
+
+    label {
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    input[type="text"] {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      color: #e2e8f0;
+      padding: 10px 12px;
+      width: 200px;
+      outline: none;
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    input[type="text"]:focus {
+      border-color: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+    }
+
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .speed {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      accent-color: #22c55e;
+      width: 160px;
+    }
+
+    .status {
+      color: #cbd5e1;
+      font-size: 0.95rem;
+      margin: 6px 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .leaderboard {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 14px;
+    }
+
+    .leaderboard h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+      letter-spacing: 0.01em;
+    }
+
+    .leaderboard ol {
+      margin: 0;
+      padding-left: 18px;
+      color: #cbd5e1;
+    }
+
+    .leaderboard li strong {
+      color: #e5e7eb;
+    }
   </style>
 </head>
 <body>
@@ -132,13 +212,31 @@
     <header>
       <h1>贪吃蛇小游戏</h1>
       <div class="controls">
-        <button id="start">开始 / 重开</button>
         <div class="stats">
+          <span>玩家：<strong id="player-label">未注册</strong></span>
           <span>得分：<strong id="score">0</strong></span>
-          <span>最高分：<strong id="best">0</strong></span>
+          <span>个人最高：<strong id="best">0</strong></span>
         </div>
       </div>
     </header>
+
+    <section class="form" aria-label="玩家设置">
+      <div class="field-row">
+        <label for="player-id">玩家 ID：</label>
+        <input id="player-id" type="text" placeholder="输入昵称或学号" maxlength="20" />
+        <button id="register">注册 / 切换玩家</button>
+      </div>
+      <div class="field-row">
+        <div class="speed">
+          <label for="speed">速度：</label>
+          <input id="speed" type="range" min="1" max="5" step="1" value="3" />
+          <span id="speed-label">中速</span>
+        </div>
+        <button id="start" disabled>开始游戏</button>
+        <button id="pause" disabled>暂停</button>
+      </div>
+      <div class="status" id="status">请先注册玩家 ID，随后选择速度再开始游戏。</div>
+    </section>
     <canvas id="board" width="540" height="540"></canvas>
     <div class="hint">
       <span class="badge">⬆️ ⬇️ ⬅️ ➡️ 方向键控制移动</span>
@@ -146,14 +244,26 @@
       <span class="badge food">吃到食物 +10 分</span>
       <span class="badge danger">撞墙或撞到自己会失败</span>
     </div>
+    <div class="leaderboard">
+      <h3>排行榜（本地）</h3>
+      <ol id="leaderboard"></ol>
+    </div>
   </main>
 
   <script>
     const canvas = document.getElementById('board');
     const ctx = canvas.getContext('2d');
     const startBtn = document.getElementById('start');
+    const pauseBtn = document.getElementById('pause');
+    const registerBtn = document.getElementById('register');
+    const playerIdInput = document.getElementById('player-id');
+    const playerLabel = document.getElementById('player-label');
+    const speedSlider = document.getElementById('speed');
+    const speedLabel = document.getElementById('speed-label');
     const scoreEl = document.getElementById('score');
     const bestEl = document.getElementById('best');
+    const statusEl = document.getElementById('status');
+    const leaderboardEl = document.getElementById('leaderboard');
 
     const gridSize = 18;
     const tileSize = canvas.width / gridSize;
@@ -164,8 +274,11 @@
     let food = { x: 8, y: 8 };
     let gameLoop = null;
     let score = 0;
-    let best = Number(localStorage.getItem('best-score') || 0);
+    let best = 0;
     let isPaused = false;
+    let playerId = localStorage.getItem('player-id') || '';
+    let speedLevel = Number(localStorage.getItem('snake-speed') || 3);
+    let leaderboard = [];
 
     const colors = {
       board: '#0b1222',
@@ -175,22 +288,67 @@
       head: '#a3e635',
     };
 
-    function resetGame() {
-      snake = [
-        { x: 5, y: 9 },
-        { x: 4, y: 9 },
-        { x: 3, y: 9 },
-      ];
-      direction = { x: 1, y: 0 };
-      queuedDirection = { ...direction };
-      score = 0;
-      scoreEl.textContent = score;
-      isPaused = false;
-      startBtn.textContent = '开始 / 重开';
-      spawnFood();
-      clearInterval(gameLoop);
-      gameLoop = setInterval(tick, 140);
-      draw();
+    const speedLabelMap = {
+      1: '最慢',
+      2: '慢速',
+      3: '中速',
+      4: '快速',
+      5: '狂飙',
+    };
+
+    function getInterval() {
+      const map = {
+        1: 220,
+        2: 180,
+        3: 140,
+        4: 110,
+        5: 85,
+      };
+      return map[speedLevel] ?? 140;
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function loadLeaderboard() {
+      try {
+        const stored = localStorage.getItem('snake-leaderboard');
+        leaderboard = stored ? JSON.parse(stored) : [];
+      } catch (error) {
+        leaderboard = [];
+      }
+    }
+
+    function saveLeaderboard() {
+      localStorage.setItem('snake-leaderboard', JSON.stringify(leaderboard));
+    }
+
+    function updateLeaderboardDisplay() {
+      leaderboardEl.innerHTML = '';
+      const sorted = [...leaderboard].sort((a, b) => b.best - a.best).slice(0, 10);
+      if (!sorted.length) {
+        const li = document.createElement('li');
+        li.textContent = '暂无记录，快来创造第一名！';
+        leaderboardEl.appendChild(li);
+        return;
+      }
+
+      sorted.forEach((entry, index) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>${index + 1}. ${entry.id}</strong> — 最高分 ${entry.best}`;
+        leaderboardEl.appendChild(li);
+      });
+    }
+
+    function syncPlayerBest() {
+      const entry = leaderboard.find((item) => item.id === playerId);
+      best = entry?.best ?? 0;
+      bestEl.textContent = best;
+    }
+
+    function updatePlayerLabel() {
+      playerLabel.textContent = playerId || '未注册';
     }
 
     function spawnFood() {
@@ -203,6 +361,45 @@
         }
       }
       food = openTiles[Math.floor(Math.random() * openTiles.length)];
+    }
+
+    function resetGame() {
+      if (!playerId) {
+        setStatus('请先注册玩家 ID，再点击开始。');
+        return;
+      }
+
+      snake = [
+        { x: 5, y: 9 },
+        { x: 4, y: 9 },
+        { x: 3, y: 9 },
+      ];
+      direction = { x: 1, y: 0 };
+      queuedDirection = { ...direction };
+      score = 0;
+      scoreEl.textContent = score;
+      isPaused = false;
+      spawnFood();
+      clearInterval(gameLoop);
+      gameLoop = setInterval(tick, getInterval());
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = '暂停';
+      startBtn.textContent = '重新开始';
+      setStatus(`已开始，当前速度：${speedLabelMap[speedLevel]}`);
+      draw();
+    }
+
+    function recordScore() {
+      const existing = leaderboard.find((item) => item.id === playerId);
+      if (existing) {
+        existing.best = Math.max(existing.best, score);
+      } else {
+        leaderboard.push({ id: playerId, best: score });
+      }
+      best = Math.max(best, score);
+      bestEl.textContent = best;
+      saveLeaderboard();
+      updateLeaderboardDisplay();
     }
 
     function tick() {
@@ -232,9 +429,6 @@
       if (ateFood) {
         score += 10;
         scoreEl.textContent = score;
-        best = Math.max(best, score);
-        localStorage.setItem('best-score', best);
-        bestEl.textContent = best;
         spawnFood();
       } else {
         snake.pop();
@@ -245,12 +439,16 @@
 
     function endGame() {
       clearInterval(gameLoop);
+      gameLoop = null;
+      recordScore();
+      pauseBtn.disabled = true;
+      setStatus('游戏结束，点击开始重来或切换玩家。');
       ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#f87171';
-      ctx.font = 'bold 28px "Inter", system-ui, sans-serif';
+      ctx.font = 'bold 26px "Inter", system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('游戏结束 - 按下开始重来', canvas.width / 2, canvas.height / 2);
+      ctx.fillText(`游戏结束 - ${playerId} 得分 ${score}`, canvas.width / 2, canvas.height / 2);
     }
 
     function drawGrid() {
@@ -307,28 +505,46 @@
       drawGrid();
     }
 
+    function drawWelcome() {
+      drawBackground();
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = 'bold 22px "Inter", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('注册玩家 ID 后点击开始游戏', canvas.width / 2, canvas.height / 2);
+    }
+
     function draw() {
       drawBackground();
       drawFood();
       drawSnake();
     }
 
-    function updateBestDisplay() {
-      bestEl.textContent = best;
-    }
-
     function handleDirection(key) {
       const next = { ...direction };
-      if (key === 'ArrowUp' && direction.y !== 1) next.x = 0, next.y = -1;
-      else if (key === 'ArrowDown' && direction.y !== -1) next.x = 0, next.y = 1;
-      else if (key === 'ArrowLeft' && direction.x !== 1) next.x = -1, next.y = 0;
-      else if (key === 'ArrowRight' && direction.x !== -1) next.x = 1, next.y = 0;
+      if (key === 'ArrowUp' && direction.y !== 1) (next.x = 0), (next.y = -1);
+      else if (key === 'ArrowDown' && direction.y !== -1) (next.x = 0), (next.y = 1);
+      else if (key === 'ArrowLeft' && direction.x !== 1) (next.x = -1), (next.y = 0);
+      else if (key === 'ArrowRight' && direction.x !== -1) (next.x = 1), (next.y = 0);
       queuedDirection = next;
     }
 
     function togglePause() {
+      if (!gameLoop) return;
       isPaused = !isPaused;
-      startBtn.textContent = isPaused ? '继续游戏' : '开始 / 重开';
+      pauseBtn.textContent = isPaused ? '继续' : '暂停';
+      setStatus(isPaused ? '已暂停，按空格或按钮继续。' : `继续游戏，速度：${speedLabelMap[speedLevel]}`);
+    }
+
+    function handleSpeedChange(value) {
+      speedLevel = Number(value);
+      speedLabel.textContent = speedLabelMap[speedLevel];
+      localStorage.setItem('snake-speed', speedLevel);
+
+      if (gameLoop) {
+        clearInterval(gameLoop);
+        gameLoop = setInterval(tick, getInterval());
+        setStatus(`速度已调整为：${speedLabelMap[speedLevel]}`);
+      }
     }
 
     document.addEventListener('keydown', (event) => {
@@ -343,9 +559,50 @@
     });
 
     startBtn.addEventListener('click', resetGame);
+    pauseBtn.addEventListener('click', togglePause);
 
-    updateBestDisplay();
-    resetGame();
+    registerBtn.addEventListener('click', () => {
+      const value = playerIdInput.value.trim();
+      if (!value) {
+        setStatus('玩家 ID 不能为空。');
+        return;
+      }
+
+      playerId = value;
+      localStorage.setItem('player-id', playerId);
+      updatePlayerLabel();
+      syncPlayerBest();
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      setStatus('注册成功，点击开始即可游玩。');
+    });
+
+    speedSlider.addEventListener('input', (event) => {
+      handleSpeedChange(event.target.value);
+    });
+
+    function init() {
+      loadLeaderboard();
+      updateLeaderboardDisplay();
+
+      speedSlider.value = speedLevel;
+      speedLabel.textContent = speedLabelMap[speedLevel];
+
+      if (playerId) {
+        playerIdInput.value = playerId;
+        updatePlayerLabel();
+        syncPlayerBest();
+        startBtn.disabled = false;
+        setStatus('已自动填充上次玩家，点击开始开局。');
+      } else {
+        updatePlayerLabel();
+        setStatus('请先注册玩家 ID，随后选择速度再开始游戏。');
+      }
+
+      drawWelcome();
+    }
+
+    init();
   </script>
 </body>
 </html>
